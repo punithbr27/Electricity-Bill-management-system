@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Add Meter</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    window.onload = function() {
+      const flashMessage = document.getElementById('flash-message');
+      if (flashMessage && flashMessage.innerText.trim() !== "") {
+        alert(flashMessage.innerText);
+      }
+    };
+  </script>
+</head>
+<body>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div id="flash-message" style="display:none;">{{ messages[0] }}</div>
+    {% endif %}
+  {% endwith %}
+
+  <h1>Add New Meter</h1>
+
+  <form method="POST">
+    <label>Meter ID:</label><br>
+    <input type="text" name="meter_id" required><br><br>
+
+    <label>Customer:</label><br>
+    <select name="customer_id" required>
+      <option value="">-- Select Customer --</option>
+      {% for c in customers %}
+        <option value="{{ c[0] }}">{{ c[0] }} - {{ c[1] }}</option>
+      {% endfor %}
+    </select><br><br>
+
+    <label>Installation Date:</label><br>
+    <input type="date" name="installation_date" required><br><br>
+
+    <label>Status:</label><br>
+    <input type="text" name="status" placeholder="Active / Inactive"><br><br>
+
+    <button type="submit">Add Meter</button>
+  </form>
+
+  <br>
+  <button onclick="window.location.href='/'">Back to Dashboard</button>
+</body>
+</html>

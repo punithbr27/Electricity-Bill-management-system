@@ -1,0 +1,24 @@
+-- Disable foreign key checks to allow truncation
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- Truncate all tables
+TRUNCATE TABLE Payment;
+TRUNCATE TABLE Bill;
+TRUNCATE TABLE Meter_Reading;
+TRUNCATE TABLE Meter;
+TRUNCATE TABLE Complaint;
+TRUNCATE TABLE Customer;
+TRUNCATE TABLE Technician;
+TRUNCATE TABLE Tariff;
+
+-- Reset AUTO_INCREMENT to 1 for all tables
+ALTER TABLE Customer AUTO_INCREMENT = 1;
+ALTER TABLE Meter AUTO_INCREMENT = 1;
+ALTER TABLE Tariff AUTO_INCREMENT = 1;
+ALTER TABLE Bill AUTO_INCREMENT = 1;
+ALTER TABLE Payment AUTO_INCREMENT = 1;
+ALTER TABLE Technician AUTO_INCREMENT = 1;
+ALTER TABLE Complaint AUTO_INCREMENT = 1;
+
+-- Re-enable foreign key checks
+SET FOREIGN_KEY_CHECKS = 1;

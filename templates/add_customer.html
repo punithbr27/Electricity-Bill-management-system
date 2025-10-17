@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Add Customer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    // Show popup when page loads if message exists
+    window.onload = function() {
+      const flashMessage = document.getElementById('flash-message');
+      if (flashMessage && flashMessage.innerText.trim() !== "") {
+        alert(flashMessage.innerText);
+      }
+    };
+  </script>
+</head>
+<body>
+  <!-- Flash message container -->
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div id="flash-message" style="display:none;">{{ messages[0] }}</div>
+    {% endif %}
+  {% endwith %}
+
+  <h1>Add New Customer</h1>
+
+  <form method="POST">
+    <label>Customer ID:</label><br>
+    <input type="text" name="customer_id" required><br><br>
+
+    <label>Name:</label><br>
+    <input type="text" name="name" required><br><br>
+
+    <label>Address:</label><br>
+    <input type="text" name="address"><br><br>
+
+    <label>Contact Number:</label><br>
+    <input type="text" name="contact"><br><br>
+
+    <label>Email:</label><br>
+    <input type="email" name="email"><br><br>
+
+    <button type="submit">Add Customer</button>
+  </form>
+
+  <br>
+  <button onclick="window.location.href='/'">Back to Dashboard</button>
+</body>
+</html>

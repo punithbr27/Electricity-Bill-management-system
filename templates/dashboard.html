@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Electricity Bill Management Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container">
+            <h3 class="navbar-brand">⚡ BESCOM - Electricity Bill Management</h3>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h1>Dashboard</h1>
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card text-white bg-primary">
+                    <div class="card-body">
+                        <h5>Total Customers</h5>
+                        <h2>{{ total_customers }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-success">
+                    <div class="card-body">
+                        <h5>Total Revenue ₹</h5>
+                        <h2>{{ total_revenue|round(2) }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-danger">
+                    <div class="card-body">
+                        <h5>Overdue Bills</h5>
+                        <h2>{{ overdue_bills }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-info">
+                    <div class="card-body">
+                        <h5>Active Meters</h5>
+                        <h2>{{ active_meters }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-8">
+                <h3>Monthly Revenue</h3>
+                <canvas id="revenueChart"></canvas>
+            </div>
+        </div>
+
+        <div class="menu mt-4">
+            <button class="btn btn-primary" onclick="window.location.href='/add_customer'">Add Customer</button>
+            <button class="btn btn-primary" onclick="window.location.href='/add_meter'">Add Meter</button>
+            <button class="btn btn-primary" onclick="window.location.href='/add_reading'">Add Meter Reading</button>
+            <button class="btn btn-primary" onclick="window.location.href='/add_tariff'">Add Tariff</button>
+            <button class="btn btn-primary" onclick="window.location.href='/bill'">Generate Bill</button>
+            <button class="btn btn-primary" onclick="window.location.href='/payment'">Make Payment</button>
+            <button class="btn btn-primary" onclick="window.location.href='/complaint'">Complaint Portal</button>
+        </div>
+    </div>
+
+    <script>
+        // Ensure monthly_data is properly passed and handle empty case
+        const monthlyData = JSON.parse('{{ monthly_data|tojson|safe }}');
+        const labels = monthlyData.length > 0 ? monthlyData.map(row => row[0]) : ['No Data'];
+        const data = monthlyData.length > 0 ? monthlyData.map(row => row[1] || 0) : [0];
+
+        console.log('Labels:', labels); // Debug: Check labels in console
+        console.log('Data:', data); // Debug: Check data in console
+
+        const ctx = document.getElementById('revenueChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Monthly Revenue ₹',
+                    data: data,
+                    borderColor: '#28a745',
+                    backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
