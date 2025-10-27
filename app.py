@@ -1,497 +1,492 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, flash, redirect, url_for
 import mysql.connector
-import decimal
+from mysql.connector import Error
+import json
+import logging
+
+# Configure logging for debugging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
-app.secret_key = "7410"  # needed for flashing messages
+app.secret_key = 'your_secret_key'  # Replace with a secure key
 
-# --- MySQL Connection (Per-Request) ---
-def get_db():
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="7410",  # your password
-        database="Electricity_Bill_Management"
-    )
+# Database connection configuration
+db_config = {
+    'host': 'localhost',
+    'user': 'root',
+    'password': '7410',  # Updated to your MySQL password
+    'database': 'Electricity_Bill_Management'
+}
+
+def get_db_connection():
+    try:
+        connection = mysql.connector.connect(**db_config)
+        if connection.is_connected():
+            return connection
+        else:
+            logging.error("Failed to establish database connection")
+            return None
+    except Error as e:
+        logging.error(f"Error connecting to MySQL: {e}")
+        return None
 
 @app.route('/')
 def dashboard():
-    # Per-request DB connection
-    db = get_db()
+    connection = get_db_connection()
+    if connection is None:
+        flash('Database connection failed!', 'error')
+        return render_template('dashboard.html', total_customers=0, overdue_bills=0, total_revenue=0, active_meters=0, monthly_revenue={})
+
+    cursor = connection.cursor()
     try:
-        cursor = db.cursor()
-        
-        # KPI Queries
+        # Total Customers
         cursor.execute("SELECT COUNT(*) FROM Customer")
         total_customers = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM Bill WHERE status='UNPAID' AND due_date < CURDATE()")
+
+        # Overdue Bills
+        cursor.execute("SELECT COUNT(*) FROM Bill WHERE status = 'UNPAID' AND due_date < CURDATE()")
         overdue_bills = cursor.fetchone()[0]
-        
+
+        # Total Revenue
         cursor.execute("SELECT SUM(amount_paid) FROM Payment")
         total_revenue = cursor.fetchone()[0] or 0
-        
-        cursor.execute("SELECT COUNT(*) FROM Meter WHERE status='ACTIVE'")
+
+        # Active Meters
+        cursor.execute("SELECT COUNT(*) FROM Meter WHERE status = 'ACTIVE'")
         active_meters = cursor.fetchone()[0]
-        
-        # Monthly Revenue Query
+
+        # Daily Revenue
         cursor.execute("""
-            SELECT MONTHNAME(b.billing_date) AS month_name, SUM(p.amount_paid) AS total_paid
-            FROM Bill b LEFT JOIN Payment p ON b.bill_id = p.bill_id
-            GROUP BY MONTHNAME(b.billing_date), MONTH(b.billing_date)
-            ORDER BY MONTH(b.billing_date)
+            SELECT DATE_FORMAT(p.payment_date, '%Y-%m-%d') AS day, SUM(p.amount_paid) AS revenue
+            FROM Payment p
+            GROUP BY day
+            ORDER BY day
         """)
-        monthly_data = cursor.fetchall()
-        
-        return render_template('dashboard.html', 
-                             total_customers=total_customers,
-                             overdue_bills=overdue_bills,
-                             total_revenue=total_revenue,
-                             active_meters=active_meters,
-                             monthly_data=monthly_data)
+        monthly_revenue = {row[0]: float(row[1]) for row in cursor.fetchall()}
+    except Error as e:
+        logging.error(f"Error fetching dashboard data: {e}")
+        flash(f"Error fetching dashboard data: {e}", 'error')
+        return render_template('dashboard.html', total_customers=0, overdue_bills=0, total_revenue=0, active_meters=0, monthly_revenue={})
     finally:
-        db.close()
+        cursor.close()
+        connection.close()
+
+    return render_template('dashboard.html', total_customers=total_customers, overdue_bills=overdue_bills,
+                           total_revenue=total_revenue, active_meters=active_meters, monthly_revenue=json.dumps(monthly_revenue))
+
 
 @app.route('/add_customer', methods=['GET', 'POST'])
 def add_customer():
     if request.method == 'POST':
-        db = get_db()
-        try:
-            cursor = db.cursor()
-            customer_id = request.form['customer_id']
-            name = request.form['name']
-            address = request.form['address']
-            contact = request.form['contact']
-            email = request.form['email']
-
-            query = "INSERT INTO Customer (customer_id, name, address, contact_number, email, credit_balance) VALUES (%s, %s, %s, %s, %s, 0.0)"
-            values = (customer_id, name, address, contact, email)
-            cursor.execute(query, values)
-            db.commit()
-
-            flash("✅ Customer Created Successfully!")
-        except mysql.connector.Error as err:
-            flash(f"⚠️ Error: {err}")
-        finally:
-            db.close()
+        name = request.form['name']
+        address = request.form['address']
+        contact_number = request.form['contact_number']
+        email = request.form['email']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO Customer (name, address, contact_number, email, credit_balance)
+                    VALUES (%s, %s, %s, %s, 0.0)
+                """, (name, address, contact_number, email))
+                connection.commit()
+                flash('✅ Customer Created Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error adding customer: {e}")
+                flash(f"Error adding customer: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
         return redirect(url_for('add_customer'))
-
     return render_template('add_customer.html')
 
 @app.route('/add_meter', methods=['GET', 'POST'])
 def add_meter():
-    if request.method == 'POST':
-        db = get_db()
+    connection = get_db_connection()
+    customers = []
+    if connection:
+        cursor = connection.cursor()
         try:
-            cursor = db.cursor()
-            meter_id = request.form['meter_id']
-            customer_id = request.form['customer_id']
-            installation_date = request.form['installation_date']
-            status = request.form['status']
-
-            query = "INSERT INTO Meter (meter_id, customer_id, installation_date, status) VALUES (%s, %s, %s, %s)"
-            values = (meter_id, customer_id, installation_date, status)
-            cursor.execute(query, values)
-            db.commit()
-
-            flash("✅ Meter Added Successfully!")
-        except mysql.connector.Error as err:
-            flash(f"⚠️ Error: {err}")
+            cursor.execute("SELECT customer_id, name FROM Customer")
+            customers = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching customers: {e}")
+            flash(f"Error fetching customers: {e}", 'error')
         finally:
-            db.close()
-        return redirect(url_for('add_meter'))
+            cursor.close()
+            connection.close()
 
-    # Fetch customers for dropdown
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT customer_id, name FROM Customer")
-        customers = cursor.fetchall()
-        return render_template('add_meter.html', customers=customers)
-    finally:
-        db.close()
+    if request.method == 'POST':
+        customer_id = request.form['customer_id']
+        installation_date = request.form['installation_date']
+        status = request.form['status']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO Meter (customer_id, installation_date, status)
+                    VALUES (%s, %s, %s)
+                """, (customer_id, installation_date, status))
+                connection.commit()
+                flash('✅ Meter Added Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error adding meter: {e}")
+                flash(f"Error adding meter: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
+        return redirect(url_for('add_meter'))
+    return render_template('add_meter.html', customers=customers)
 
 @app.route('/add_reading', methods=['GET', 'POST'])
 def add_reading():
-    if request.method == 'POST':
-        db = get_db()
+    connection = get_db_connection()
+    meters = []
+    if connection:
+        cursor = connection.cursor()
         try:
-            cursor = db.cursor()
-            meter_id = request.form['meter_id']
-            reading_value = request.form['reading_value']
-            reading_date = request.form['reading_date']
-
-            # Validate meter_id
-            cursor.execute("SELECT meter_id FROM Meter WHERE meter_id = %s", (meter_id,))
-            if not cursor.fetchone():
-                flash("❌ Invalid Meter ID.")
-                return redirect(url_for('add_reading'))
-
-            # Insert reading (reading_id is auto-incremented)
-            query = "INSERT INTO Meter_Reading (meter_id, reading_value, reading_date) VALUES (%s, %s, %s)"
-            values = (int(meter_id), int(reading_value), reading_date)
-            cursor.execute(query, values)
-            db.commit()
-            flash("✅ Meter Reading Recorded Successfully!")
-        except mysql.connector.Error as err:
-            if err.errno == 1452:
-                flash("❌ Invalid Meter ID — foreign key constraint failed.")
-            else:
-                flash(f"⚠️ Database Error: {err}")
+            cursor.execute("SELECT meter_id, customer_id FROM Meter")
+            meters = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching meters: {e}")
+            flash(f"Error fetching meters: {e}", 'error')
         finally:
-            db.close()
-        return redirect(url_for('add_reading'))
+            cursor.close()
+            connection.close()
 
-    # Fetch meters for dropdown
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT meter_id FROM Meter")
-        meters = cursor.fetchall()
-        return render_template('add_reading.html', meters=meters)
-    finally:
-        db.close()
+    if request.method == 'POST':
+        meter_id = request.form['meter_id']
+        reading_date = request.form['reading_date']
+        reading_value = request.form['reading_value']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO Meter_Reading (meter_id, reading_date, reading_value)
+                    VALUES (%s, %s, %s)
+                """, (meter_id, reading_date, reading_value))
+                connection.commit()
+                flash('✅ Meter Reading Recorded Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error adding reading: {e}")
+                flash(f"Error adding reading: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
+        return redirect(url_for('add_reading'))
+    return render_template('add_reading.html', meters=meters)
 
 @app.route('/add_tariff', methods=['GET', 'POST'])
 def add_tariff():
     if request.method == 'POST':
-        db = get_db()
-        try:
-            cursor = db.cursor()
-            plan_name = request.form['plan_name']
-            unit_rate = request.form['unit_rate']
-            applicable_from_date = request.form['applicable_from_date']
-
-            # Validate unit_rate
+        plan_name = request.form['plan_name']
+        unit_rate = request.form['unit_rate']
+        applicable_from_date = request.form['applicable_from_date']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
             try:
-                unit_rate = float(unit_rate)
-                if unit_rate <= 0:
-                    flash("❌ Unit rate must be positive.")
-                    return redirect(url_for('add_tariff'))
-            except ValueError:
-                flash("❌ Invalid unit rate format.")
-                return redirect(url_for('add_tariff'))
-
-            # Insert tariff
-            query = "INSERT INTO Tariff (plan_name, unit_rate, applicable_from_date) VALUES (%s, %s, %s)"
-            values = (plan_name, unit_rate, applicable_from_date)
-            cursor.execute(query, values)
-            db.commit()
-
-            flash("✅ Tariff Plan Added Successfully!")
-        except mysql.connector.Error as err:
-            flash(f"⚠️ Database Error: {err}")
-        finally:
-            db.close()
+                cursor.execute("""
+                    INSERT INTO Tariff (plan_name, unit_rate, applicable_from_date)
+                    VALUES (%s, %s, %s)
+                """, (plan_name, unit_rate, applicable_from_date))
+                connection.commit()
+                flash('✅ Tariff Plan Added Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error adding tariff: {e}")
+                flash(f"Error adding tariff: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
         return redirect(url_for('add_tariff'))
-
     return render_template('add_tariff.html')
 
 @app.route('/bill', methods=['GET', 'POST'])
-def generate_bill():
-    if request.method == 'POST':
-        db = get_db()
+def bill():
+    connection = get_db_connection()
+    meters = []
+    tariffs = []
+    if connection:
+        cursor = connection.cursor()
         try:
-            cursor = db.cursor()
-            meter_id = request.form['meter_id']
-            tariff_id = request.form['tariff_id']
-            billing_date = request.form['billing_date']
-            due_date = request.form['due_date']
-
-            # Validate meter_id and get customer_id
-            cursor.execute("SELECT meter_id, customer_id FROM Meter WHERE meter_id = %s AND status='ACTIVE'", (meter_id,))
-            meter = cursor.fetchone()
-            if not meter:
-                flash("❌ Invalid or inactive Meter ID.")
-                return redirect(url_for('generate_bill'))
-            customer_id = meter[1]
-
-            # Validate tariff_id
-            cursor.execute("SELECT tariff_id, unit_rate FROM Tariff WHERE tariff_id = %s", (tariff_id,))
-            tariff = cursor.fetchone()
-            if not tariff:
-                flash("❌ Invalid Tariff ID.")
-                return redirect(url_for('generate_bill'))
-            unit_rate = float(tariff[1])  # Convert Decimal to float
-
-            # Get latest two meter readings
-            cursor.execute("""
-                SELECT reading_value, reading_date
-                FROM Meter_Reading
-                WHERE meter_id = %s
-                ORDER BY reading_date DESC
-                LIMIT 2
-            """, (meter_id,))
-            readings = cursor.fetchall()
-
-            if len(readings) < 2:
-                flash("❌ Not enough meter readings to generate bill.")
-                return redirect(url_for('generate_bill'))
-
-            # Calculate units consumed (latest - previous)
-            units_consumed = readings[0][0] - readings[1][0]
-            if units_consumed < 0:
-                flash("❌ Invalid meter readings: Latest reading is less than previous.")
-                return redirect(url_for('generate_bill'))
-
-            # Calculate amount due
-            amount_due = units_consumed * unit_rate
-
-            # Apply customer's credit balance
-            cursor.execute("SELECT credit_balance FROM Customer WHERE customer_id = %s", (customer_id,))
-            credit_balance = float(cursor.fetchone()[0] or 0.0)  # Convert Decimal to float
-            amount_due = max(amount_due - credit_balance, 0.0)  # Ensure amount_due >= 0
-
-            # Update credit balance (reduce by amount used)
-            credit_used = min(credit_balance, units_consumed * unit_rate)
-            cursor.execute("UPDATE Customer SET credit_balance = credit_balance - %s WHERE customer_id = %s", (credit_used, customer_id))
-
-            # Insert bill
-            query = """
-                INSERT INTO Bill (meter_id, tariff_id, billing_date, due_date, amount_due, status)
-                VALUES (%s, %s, %s, %s, %s, 'UNPAID')
-            """
-            values = (int(meter_id), int(tariff_id), billing_date, due_date, amount_due)
-            cursor.execute(query, values)
-            db.commit()
-
-            flash(f"✅ Bill Generated Successfully! Amount: ₹{amount_due:.2f}")
-        except mysql.connector.Error as err:
-            if err.errno == 1452:
-                flash("❌ Invalid Meter or Tariff ID — foreign key constraint failed.")
-            else:
-                flash(f"⚠️ Database Error: {err}")
+            cursor.execute("SELECT meter_id, customer_id FROM Meter")
+            meters = cursor.fetchall()
+            cursor.execute("SELECT tariff_id, plan_name FROM Tariff")
+            tariffs = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching data: {e}")
+            flash(f"Error fetching data: {e}", 'error')
         finally:
-            db.close()
-        return redirect(url_for('generate_bill'))
+            cursor.close()
+            connection.close()
 
-    # Fetch meters and tariffs for dropdowns
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT meter_id FROM Meter WHERE status='ACTIVE'")
-        meters = cursor.fetchall()
-        cursor.execute("SELECT tariff_id, plan_name FROM Tariff")
-        tariffs = cursor.fetchall()
-        return render_template('bill.html', meters=meters, tariffs=tariffs)
-    finally:
-        db.close()
+    if request.method == 'POST':
+        meter_id = request.form['meter_id']
+        tariff_id = request.form['tariff_id']
+        billing_date = request.form['billing_date']
+        due_date = request.form['due_date']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("""
+                    SELECT reading_value, reading_date 
+                    FROM Meter_Reading 
+                    WHERE meter_id = %s 
+                    ORDER BY reading_date DESC LIMIT 2
+                """, (meter_id,))
+                readings = cursor.fetchall()
+                if len(readings) < 2:
+                    flash('Insufficient readings to generate bill', 'error')
+                else:
+                    units_consumed = readings[0][0] - readings[1][0]
+                    cursor.execute("SELECT unit_rate FROM Tariff WHERE tariff_id = %s", (tariff_id,))
+                    unit_rate = cursor.fetchone()[0]
+                    amount_due = units_consumed * unit_rate
+                    cursor.execute("""
+                        INSERT INTO Bill (meter_id, tariff_id, billing_date, due_date, amount_due, status)
+                        VALUES (%s, %s, %s, %s, %s, 'UNPAID')
+                    """, (meter_id, tariff_id, billing_date, due_date, amount_due))
+                    connection.commit()
+                    flash('✅ Bill Generated Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error generating bill: {e}")
+                flash(f"Error generating bill: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
+        return redirect(url_for('bill'))
+    return render_template('bill.html', meters=meters, tariffs=tariffs)
 
 @app.route('/payment', methods=['GET', 'POST'])
-def make_payment():
-    if request.method == 'POST':
-        db = get_db()
+def payment():
+    connection = get_db_connection()
+    bills = []
+    if connection:
+        cursor = connection.cursor()
         try:
-            cursor = db.cursor()
-            bill_id = request.form['bill_id']
-            amount_paid = request.form['amount_paid']
-            payment_date = request.form['payment_date']
-            payment_method = request.form['payment_method']
-
-            # Validate bill_id and get customer_id
-            cursor.execute("""
-                SELECT b.bill_id, b.amount_due, b.status, m.customer_id
-                FROM Bill b
-                JOIN Meter m ON b.meter_id = m.meter_id
-                WHERE b.bill_id = %s AND b.status = 'UNPAID'
-            """, (bill_id,))
-            bill = cursor.fetchone()
-            if not bill:
-                flash("❌ Invalid or already paid Bill ID.")
-                return redirect(url_for('make_payment'))
-            customer_id = bill[3]
-
-            # Validate amount_paid
-            try:
-                amount_paid = float(amount_paid)
-                if amount_paid <= 0:
-                    flash("❌ Amount paid must be positive.")
-                    return redirect(url_for('make_payment'))
-            except ValueError:
-                flash("❌ Invalid amount paid format.")
-                return redirect(url_for('make_payment'))
-
-            # Insert payment
-            query = "INSERT INTO Payment (bill_id, payment_date, amount_paid, payment_method) VALUES (%s, %s, %s, %s)"
-            values = (int(bill_id), payment_date, amount_paid, payment_method)
-            cursor.execute(query, values)
-
-            # Update bill status and handle overpayment
-            cursor.execute("SELECT SUM(amount_paid) FROM Payment WHERE bill_id = %s", (bill_id,))
-            total_paid = float(cursor.fetchone()[0] or 0.0)  # Convert Decimal to float
-            if total_paid >= float(bill[1]):  # bill[1] is amount_due, convert to float
-                cursor.execute("UPDATE Bill SET status='PAID' WHERE bill_id = %s", (bill_id,))
-                # Store overpayment in customer credit_balance
-                overpayment = total_paid - float(bill[1])
-                if overpayment > 0:
-                    cursor.execute("UPDATE Customer SET credit_balance = credit_balance + %s WHERE customer_id = %s", (overpayment, customer_id))
-
-            db.commit()
-            flash(f"✅ Payment Recorded Successfully! Amount: ₹{amount_paid:.2f}")
-        except mysql.connector.Error as err:
-            if err.errno == 1452:
-                flash("❌ Invalid Bill ID — foreign key constraint failed.")
-            else:
-                flash(f"⚠️ Database Error: {err}")
+            cursor.execute("SELECT bill_id, meter_id, amount_due FROM Bill WHERE status = 'UNPAID'")
+            bills = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching bills: {e}")
+            flash(f"Error fetching bills: {e}", 'error')
         finally:
-            db.close()
-        return redirect(url_for('make_payment'))
+            cursor.close()
+            connection.close()
 
-    # Fetch unpaid bills for dropdown with remaining amount
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("""
-            SELECT b.bill_id, (b.amount_due - IFNULL(p.total_paid, 0)) AS remaining
-            FROM Bill b
-            LEFT JOIN (SELECT bill_id, SUM(amount_paid) AS total_paid FROM Payment GROUP BY bill_id) p
-            ON b.bill_id = p.bill_id
-            WHERE b.status = 'UNPAID'
-        """)
-        bills = [(row[0], float(row[1])) for row in cursor.fetchall()]  # Convert remaining to float
-        return render_template('payment.html', bills=bills)
-    finally:
-        db.close()
+    if request.method == 'POST':
+        bill_id = request.form['bill_id']
+        payment_date = request.form['payment_date']
+        amount_paid = float(request.form['amount_paid'])
+        payment_method = request.form['payment_method']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("SELECT amount_due, meter_id FROM Bill WHERE bill_id = %s", (bill_id,))
+                bill = cursor.fetchone()
+                if not bill:
+                    flash('Bill not found', 'error')
+                else:
+                    amount_due, meter_id = bill
+                    cursor.execute("SELECT customer_id FROM Meter WHERE meter_id = %s", (meter_id,))
+                    customer_id = cursor.fetchone()[0]
+                    cursor.execute("""
+                        INSERT INTO Payment (bill_id, payment_date, amount_paid, payment_method)
+                        VALUES (%s, %s, %s, %s)
+                    """, (bill_id, payment_date, amount_paid, payment_method))
+                    if amount_paid >= amount_due:
+                        cursor.execute("UPDATE Bill SET status = 'PAID' WHERE bill_id = %s", (bill_id,))
+                    excess = amount_paid - amount_due if amount_paid > amount_due else 0
+                    if excess > 0:
+                        cursor.execute("""
+                            UPDATE Customer SET credit_balance = credit_balance + %s WHERE customer_id = %s
+                        """, (excess, customer_id))
+                    connection.commit()
+                    flash('✅ Payment Recorded Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error recording payment: {e}")
+                flash(f"Error recording payment: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
+        return redirect(url_for('payment'))
+    return render_template('payment.html', bills=bills)
 
 @app.route('/complaint', methods=['GET', 'POST'])
 def complaint():
-    if request.method == 'POST':
-        db = get_db()
+    connection = get_db_connection()
+    customers = []
+    technicians = []
+    complaints = []
+    if connection:
+        cursor = connection.cursor()
         try:
-            cursor = db.cursor()
-            customer_id = request.form['customer_id']
-            technician_id = request.form['technician_id']
-            description = request.form['description']
-            date_reported = request.form['date_reported']
-            status = request.form['status']
-
-            # Validate customer_id
-            cursor.execute("SELECT customer_id FROM Customer WHERE customer_id = %s", (customer_id,))
-            if not cursor.fetchone():
-                flash("❌ Invalid Customer ID.")
-                return redirect(url_for('complaint'))
-
-            # Validate technician_id (if provided)
-            if technician_id:
-                cursor.execute("SELECT technician_id FROM Technician WHERE technician_id = %s", (technician_id,))
-                if not cursor.fetchone():
-                    flash("❌ Invalid Technician ID.")
-                    return redirect(url_for('complaint'))
-
-            # Validate description
-            if not description.strip():
-                flash("❌ Complaint description cannot be empty.")
-                return redirect(url_for('complaint'))
-            if len(description) > 255:
-                flash("❌ Description must be 255 characters or less.")
-                return redirect(url_for('complaint'))
-
-            # Insert complaint
-            query = """
-                INSERT INTO Complaint (customer_id, technician_id, description, date_reported, status)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            values = (int(customer_id), int(technician_id) if technician_id else None, description, date_reported, status)
-            cursor.execute(query, values)
-            db.commit()
-
-            flash("✅ Complaint Filed Successfully!")
-        except mysql.connector.Error as err:
-            if err.errno == 1452:
-                flash("❌ Invalid Customer or Technician ID — foreign key constraint failed.")
-            else:
-                flash(f"⚠️ Database Error: {err}")
+            cursor.execute("SELECT customer_id, name FROM Customer")
+            customers = cursor.fetchall()
+            cursor.execute("SELECT technician_id, name FROM Technician")
+            technicians = cursor.fetchall()
+            cursor.execute("""
+                SELECT c.complaint_id, c.customer_id, cu.name, c.technician_id, t.name, c.description, c.date_reported, c.status
+                FROM Complaint c
+                JOIN Customer cu ON c.customer_id = cu.customer_id
+                LEFT JOIN Technician t ON c.technician_id = t.technician_id
+            """)
+            complaints = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching complaint data: {e}")
+            flash(f"Error fetching complaint data: {e}", 'error')
         finally:
-            db.close()
-        return redirect(url_for('complaint'))
+            cursor.close()
+            connection.close()
 
-    # Fetch customers, technicians, and all complaints
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT customer_id, name FROM Customer")
-        customers = cursor.fetchall()
-        cursor.execute("SELECT technician_id, name, role FROM Technician")
-        technicians = cursor.fetchall()
-        cursor.execute("""
-            SELECT c.complaint_id, c.customer_id, cu.name AS customer_name, 
-                   c.technician_id, t.name AS technician_name, 
-                   c.description, c.status, c.date_reported
-            FROM Complaint c
-            JOIN Customer cu ON c.customer_id = cu.customer_id
-            LEFT JOIN Technician t ON c.technician_id = t.technician_id
-            ORDER BY c.date_reported DESC
-        """)
-        complaints = cursor.fetchall()
-        return render_template('complaint.html', customers=customers, technicians=technicians, complaints=complaints)
-    finally:
-        db.close()
+    if request.method == 'POST':
+        customer_id = request.form['customer_id']
+        technician_id = request.form['technician_id'] or None
+        description = request.form['description']
+        date_reported = request.form['date_reported']
+        status = request.form['status']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO Complaint (customer_id, technician_id, description, date_reported, status)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (customer_id, technician_id, description, date_reported, status))
+                connection.commit()
+                flash('✅ Complaint Filed Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error filing complaint: {e}")
+                flash(f"Error filing complaint: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
+        return redirect(url_for('complaint'))
+    return render_template('complaint.html', customers=customers, technicians=technicians, complaints=complaints)
 
 @app.route('/update_complaint/<int:complaint_id>', methods=['GET', 'POST'])
 def update_complaint(complaint_id):
-    if request.method == 'POST':
-        db = get_db()
+    connection = get_db_connection()
+    complaint = None
+    technicians = []
+    if connection:
+        cursor = connection.cursor()
         try:
-            cursor = db.cursor()
-            technician_id = request.form['technician_id']
-            status = request.form['status']
-
-            # Validate complaint_id
-            cursor.execute("SELECT complaint_id FROM Complaint WHERE complaint_id = %s", (complaint_id,))
-            if not cursor.fetchone():
-                flash("❌ Invalid Complaint ID.")
-                return redirect(url_for('complaint'))
-
-            # Validate technician_id (if provided)
-            if technician_id:
-                cursor.execute("SELECT technician_id FROM Technician WHERE technician_id = %s", (technician_id,))
-                if not cursor.fetchone():
-                    flash("❌ Invalid Technician ID.")
-                    return redirect(url_for('complaint'))
-
-            # Update complaint
-            query = """
-                UPDATE Complaint 
-                SET technician_id = %s, status = %s
-                WHERE complaint_id = %s
-            """
-            values = (int(technician_id) if technician_id else None, status, complaint_id)
-            cursor.execute(query, values)
-            db.commit()
-
-            flash("✅ Complaint Updated Successfully!")
-        except mysql.connector.Error as err:
-            if err.errno == 1452:
-                flash("❌ Invalid Technician ID — foreign key constraint failed.")
-            else:
-                flash(f"⚠️ Database Error: {err}")
+            cursor.execute("""
+                SELECT complaint_id, customer_id, technician_id, description, date_reported, status
+                FROM Complaint WHERE complaint_id = %s
+            """, (complaint_id,))
+            complaint = cursor.fetchone()
+            cursor.execute("SELECT technician_id, name FROM Technician")
+            technicians = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching complaint data: {e}")
+            flash(f"Error fetching complaint data: {e}", 'error')
         finally:
-            db.close()
+            cursor.close()
+            connection.close()
+
+    if request.method == 'POST':
+        technician_id = request.form['technician_id'] or None
+        status = request.form['status']
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("""
+                    UPDATE Complaint SET technician_id = %s, status = %s WHERE complaint_id = %s
+                """, (technician_id, status, complaint_id))
+                connection.commit()
+                flash('✅ Complaint Updated Successfully!', 'success')
+            except Error as e:
+                logging.error(f"Error updating complaint: {e}")
+                flash(f"Error updating complaint: {e}", 'error')
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            flash('Database connection failed!', 'error')
         return redirect(url_for('complaint'))
+    return render_template('update_complaint.html', complaint=complaint, technicians=technicians)
 
-    # Fetch complaint details, customers, and technicians
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("""
-            SELECT c.complaint_id, c.customer_id, cu.name AS customer_name, 
-                   c.technician_id, t.name AS technician_name, 
-                   c.description, c.status, c.date_reported
-            FROM Complaint c
-            JOIN Customer cu ON c.customer_id = cu.customer_id
-            LEFT JOIN Technician t ON c.technician_id = t.technician_id
-            WHERE c.complaint_id = %s
-        """, (complaint_id,))
-        complaint = cursor.fetchone()
-        if not complaint:
-            flash("❌ Complaint not found.")
-            return redirect(url_for('complaint'))
+@app.route('/customers_list')
+def customers_list():
+    connection = get_db_connection()
+    customers = []
+    if connection:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("SELECT customer_id, name, address, contact_number, email, credit_balance FROM Customer")
+            customers = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching customers: {e}")
+            flash(f"Error fetching customers: {e}", 'error')
+        finally:
+            cursor.close()
+            connection.close()
+    return render_template('customers_list.html', customers=customers)
 
-        cursor.execute("SELECT technician_id, name, role FROM Technician")
-        technicians = cursor.fetchall()
-        return render_template('update_complaint.html', complaint=complaint, technicians=technicians)
-    finally:
-        db.close()
+@app.route('/active_meters')
+def active_meters():
+    connection = get_db_connection()
+    meters = []
+    if connection:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT m.meter_id, m.customer_id, c.name, m.installation_date, m.status
+                FROM Meter m JOIN Customer c ON m.customer_id = c.customer_id
+                WHERE m.status = 'ACTIVE'
+            """)
+            meters = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching active meters: {e}")
+            flash(f"Error fetching active meters: {e}", 'error')
+        finally:
+            cursor.close()
+            connection.close()
+    return render_template('active_meters.html', meters=meters)
+
+@app.route('/overdue_bills')
+def overdue_bills():
+    connection = get_db_connection()
+    overdue_customers = []
+    if connection:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT c.customer_id, c.name, c.address, c.contact_number, c.email, b.bill_id, b.amount_due, b.due_date
+                FROM Customer c
+                JOIN Meter m ON c.customer_id = m.customer_id
+                JOIN Bill b ON m.meter_id = b.meter_id
+                WHERE b.status = 'UNPAID' AND b.due_date < CURDATE()
+            """)
+            overdue_customers = cursor.fetchall()
+        except Error as e:
+            logging.error(f"Error fetching overdue bills: {e}")
+            flash(f"Error fetching overdue bills: {e}", 'error')
+        finally:
+            cursor.close()
+            connection.close()
+    return render_template('overdue_bills.html', overdue_customers=overdue_customers)
 
 if __name__ == '__main__':
     app.run(debug=True)
