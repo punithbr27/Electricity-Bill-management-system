@@ -1,62 +1,42 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Active Meters - EBMS</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 font-sans">
-    <div class="container mx-auto p-6">
-        <h1 class="text-3xl font-bold text-center mb-6">Active Meters</h1>
+{% extends 'base.html' %}
 
-        <!-- Flash Messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="mb-4">
-                    {% for category, message in messages %}
-                        <div class="p-4 mb-2 rounded {% if category == 'success' %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-        {% endwith %}
+{% block title %}Active Meters - EBMS{% endblock %}
 
-        <!-- Active Meters Table -->
-        <div class="bg-white p-6 rounded-lg shadow">
-            <table class="w-full border-collapse">
-                <thead>
-                    <tr class="bg-gray-200">
-                        <th class="border p-2">Meter ID</th>
-                        <th class="border p-2">Customer ID</th>
-                        <th class="border p-2">Customer Name</th>
-                        <th class="border p-2">Installation Date</th>
-                        <th class="border p-2">Status</th>
+{% block content %}
+    <div class="gradient-card p-6 rounded-xl">
+        <h2 class="text-2xl font-semibold mb-4">Active Meters</h2>
+
+        <div class="overflow-x-auto bg-white/5 rounded-lg p-4">
+            <table class="w-full">
+                <thead class="text-sm text-slate-300">
+                    <tr>
+                        <th class="p-2">Meter ID</th>
+                        <th class="p-2">Customer ID</th>
+                        <th class="p-2">Customer Name</th>
+                        <th class="p-2">Installation Date</th>
+                        <th class="p-2">Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for meter in meters %}
-                        <tr class="hover:bg-gray-100">
-                            <td class="border p-2">{{ meter[0] }}</td>
-                            <td class="border p-2">{{ meter[1] }}</td>
-                            <td class="border p-2">{{ meter[2] }}</td>
-                            <td class="border p-2">{{ meter[3] }}</td>
-                            <td class="border p-2">{{ meter[4] }}</td>
+                        <tr class="odd:bg-white/2 even:bg-transparent">
+                            <td class="p-2">{{ meter[0] }}</td>
+                            <td class="p-2">{{ meter[1] }}</td>
+                            <td class="p-2">{{ meter[2] }}</td>
+                            <td class="p-2">{{ meter[3] }}</td>
+                            <td class="p-2">{{ meter[4] }}</td>
                         </tr>
                     {% else %}
                         <tr>
-                            <td colspan="5" class="border p-2 text-center">No active meters found</td>
+                            <td colspan="5" class="p-4 text-center">No active meters found</td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
 
-        <!-- Back to Dashboard -->
         <div class="mt-4">
-            <a href="{{ url_for('dashboard') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Back to Dashboard</a>
+            <a href="{{ url_for('dashboard') }}" class="inline-block px-4 py-2 bg-emerald-500 rounded">Back to Dashboard</a>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}

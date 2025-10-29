@@ -1,111 +1,95 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>File Complaint</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script>
-        window.onload = function() {
-            const flashMessage = document.getElementById('flash-message');
-            if (flashMessage && flashMessage.innerText.trim() !== "") {
-                alert(flashMessage.innerText);
-            }
-        };
-    </script>
-</head>
-<body>
-    <nav class="navbar navbar-dark bg-primary">
-        <div class="container">
-            <h3 class="navbar-brand">⚡ BESCOM - Electricity Bill Management</h3>
-        </div>
-    </nav>
+{% extends 'base.html' %}
 
-    <div class="container mt-4">
-        {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                <div id="flash-message" style="display:none;">{{ messages[0] }}</div>
-            {% endif %}
-        {% endwith %}
+{% block title %}Complaints - EBMS{% endblock %}
 
-        <h1>File a Complaint</h1>
-        <form method="POST">
-            <div class="mb-3">
-                <label class="form-label">Customer:</label>
-                <select name="customer_id" class="form-control" required>
+{% block content %}
+    <div class="gradient-card p-6 rounded-xl">
+        <h2 class="text-2xl font-semibold mb-4">File a Complaint</h2>
+
+        <form method="POST" class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm text-slate-900">Customer</label>
+                        <select name="customer_id" required class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
                     <option value="">-- Select Customer --</option>
                     {% for c in customers %}
                         <option value="{{ c[0] }}">{{ c[1] }} (ID: {{ c[0] }})</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Technician (Optional):</label>
-                <select name="technician_id" class="form-control">
+
+                    <div>
+                        <label class="block text-sm text-slate-900">Technician (Optional)</label>
+                        <select name="technician_id" class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
                     <option value="">-- Select Technician --</option>
                     {% for t in technicians %}
-                        <option value="{{ t[0] }}">{{ t[1] }} ({{ t[2] }}, ID: {{ t[0] }})</option>
+                        <option value="{{ t[0] }}">{{ t[1] }} (ID: {{ t[0] }})</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Complaint Description (max 255 characters):</label>
-                <textarea class="form-control" name="description" rows="5" maxlength="255" required></textarea>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Date Reported:</label>
-                <input type="date" class="form-control" name="date_reported" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Status:</label>
-                <select name="status" class="form-control" required>
+
+                    <div>
+                        <label class="block text-sm text-slate-900">Complaint Description</label>
+                        <textarea name="description" rows="5" maxlength="255" required class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-slate-900">Date Reported</label>
+                        <input type="date" name="date_reported" required class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-slate-900">Status</label>
+                        <select name="status" required class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
                     <option value="">-- Select Status --</option>
                     <option value="OPEN">Open</option>
                     <option value="IN_PROGRESS">In Progress</option>
                     <option value="RESOLVED">Resolved</option>
                 </select>
             </div>
-            <button type="submit" class="btn btn-primary">Submit Complaint</button>
-        </form>
 
-        <div class="mt-5">
-            <h3>All Complaints</h3>
+                    <div>
+                        <button type="submit" class="px-4 py-2 bg-emerald-500 rounded">Submit Complaint</button>
+                    </div>
+                </form>
+
+        <div>
+            <h3 class="text-xl font-semibold mb-3">All Complaints</h3>
             {% if complaints %}
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Complaint ID</th>
-                            <th>Customer</th>
-                            <th>Technician</th>
-                            <th>Description</th>
-                            <th>Status</th>
-                            <th>Date Reported</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for c in complaints %}
+                <div class="overflow-x-auto bg-white/5 rounded-lg p-4">
+                    <table class="w-full">
+                        <thead class="text-sm text-slate-300">
                             <tr>
-                                <td>{{ c[0] }}</td>
-                                <td>{{ c[2] }} (ID: {{ c[1] }})</td>
-                                <td>{% if c[4] %}{{ c[4] }} (ID: {{ c[3] }}){% else %}Unassigned{% endif %}</td>
-                                <td>{{ c[5] }}</td>
-                                <td>{{ c[6] }}</td>
-                                <td>{{ c[7] }}</td>
-                                <td>
-                                    <a href="{{ url_for('update_complaint', complaint_id=c[0]) }}" class="btn btn-sm btn-warning">Update</a>
-                                </td>
+                                <th class="p-2">Complaint ID</th>
+                                <th class="p-2">Customer</th>
+                                <th class="p-2">Technician</th>
+                                <th class="p-2">Description</th>
+                                <th class="p-2">Status</th>
+                                <th class="p-2">Date</th>
+                                <th class="p-2">Action</th>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {% for c in complaints %}
+                                <tr class="odd:bg-white/2 even:bg-transparent">
+                                    <td class="p-2">{{ c[0] }}</td>
+                                    <td class="p-2">{{ c[2] }} (ID: {{ c[1] }})</td>
+                                    <td class="p-2">{% if c[4] %}{{ c[4] }} (ID: {{ c[3] }}){% else %}Unassigned{% endif %}</td>
+                                    <td class="p-2">{{ c[5] }}</td>
+                                    <td class="p-2">{{ c[6] }}</td>
+                                    <td class="p-2">{{ c[7] }}</td>
+                                    <td class="p-2"><a href="{{ url_for('update_complaint', complaint_id=c[0]) }}" class="px-2 py-1 bg-amber-400 text-slate-900 rounded">Update</a></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             {% else %}
                 <p>No complaints filed yet.</p>
             {% endif %}
         </div>
 
-        <div class="mt-3">
-            <button class="btn btn-secondary" onclick="window.location.href='/'">Back to Dashboard</button>
-        </div>
+            <div class="mt-4">
+                <a href="{{ url_for('dashboard') }}" class="inline-block px-4 py-2 bg-slate-200 text-slate-900 rounded">Back to Dashboard</a>
+            </div>
     </div>
-</body>
-</html>
+{% endblock %}

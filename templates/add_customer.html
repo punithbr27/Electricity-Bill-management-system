@@ -1,48 +1,44 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Add Customer</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script>
-    // Show popup when page loads if message exists
-    window.onload = function() {
-      const flashMessage = document.getElementById('flash-message');
-      if (flashMessage && flashMessage.innerText.trim() !== "") {
-        alert(flashMessage.innerText);
-      }
-    };
-  </script>
-</head>
-<body>
-  <!-- Flash message container -->
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}
-      <div id="flash-message" style="display:none;">{{ messages[0] }}</div>
-    {% endif %}
-  {% endwith %}
+{% extends 'base.html' %}
 
-  <h1>Add New Customer</h1>
+{% block title %}Add Customer - EBMS{% endblock %}
 
-  <form method="POST">
-    <label>Customer ID:</label><br>
-    <input type="text" name="customer_id" required><br><br>
+{% block content %}
+  <div class="gradient-card p-6 rounded-xl text-slate-900 bg-white/5">
+    <h2 class="text-2xl font-semibold mb-4 text-white">Add New Customer</h2>
 
-    <label>Name:</label><br>
-    <input type="text" name="name" required><br><br>
+    <form method="POST" class="space-y-4">
+      <!-- <div>
+        <label class="block text-sm text-slate-900">Customer ID</label>
+        <input type="text" name="customer_id" required class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
+      </div> -->
 
-    <label>Address:</label><br>
-    <input type="text" name="address"><br><br>
+      <div>
+        <label class="block text-sm text-slate-900">Name</label>
+        <input type="text" name="name" required class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
+      </div>
 
-    <label>Contact Number:</label><br>
-    <input type="text" name="contact"><br><br>
+      <div>
+        <label class="block text-sm text-slate-900">Address</label>
+        <input type="text" name="address" class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
+      </div>
 
-    <label>Email:</label><br>
-    <input type="email" name="email"><br><br>
+      <div>
+        <label class="block text-sm text-slate-900">Contact Number</label>
+        <input type="text" name="contact_number" class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
+      </div>
 
-    <button type="submit">Add Customer</button>
-  </form>
+      <div>
+        <label class="block text-sm text-slate-900">Email</label>
+        <input type="email" name="email" class="mt-1 w-full rounded-md bg-white p-2 border border-gray-300 text-slate-900">
+      </div>
 
-  <br>
-  <button onclick="window.location.href='/'">Back to Dashboard</button>
-</body>
-</html>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="px-4 py-2 bg-emerald-500 rounded-md">Add Customer</button>
+        <a href="{{ url_for('dashboard') }}" class="px-4 py-2 bg-white/5 rounded-md">Back</a>
+      </div>
+    </form>
+  </div>
+  <div class="mt-6">
+    <a href="{{ url_for('dashboard') }}" class="inline-block px-4 py-2 bg-slate-200 text-slate-900 rounded">Back to Dashboard</a>
+  </div>
+{% endblock %}

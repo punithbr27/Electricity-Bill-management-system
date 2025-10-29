@@ -4,95 +4,199 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EBMS Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body class="bg-gradient-to-r from-blue-900 to-indigo-900 text-white font-sans">
-    <div class="container mx-auto p-6 flex flex-col md:flex-row gap-6">
+    {% extends 'base.html' %}
+
+    {% block title %}Dashboard - EBMS{% endblock %}
+
+    {% block content %}
+      <div class="flex flex-col md:flex-row gap-8">
         <div class="flex-1">
-            <h1 class="text-4xl font-bold text-center mb-6">Electricity Bill Management System</h1>
-            
-            <!-- Flash Messages -->
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    <div class="mb-4">
-                        {% for category, message in messages %}
-                            <div class="p-4 mb-2 rounded {% if category == 'success' %}bg-green-500 text-white{% else %}bg-red-500 text-white{% endif %}">
-                                {{ message }}
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
+          <div class="flex items-center justify-between mb-8">
+            <h1 class="text-4xl font-bold tracking-tight">
+              <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">Electricity Bill Management</span>
+            </h1>
+            <div class="text-right">
+              <p class="text-sm text-slate-400">Last updated</p>
+              <p class="text-lg font-medium">{{ now.strftime('%b %d, %Y %H:%M') }}</p>
+            </div>
+          </div>
 
-            <!-- KPIs -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <a href="{{ url_for('customers_list') }}" class="bg-blue-500 text-white p-6 rounded-lg shadow-lg hover:bg-blue-600 transition transform hover:scale-105">
-                    <h2 class="text-xl font-semibold">Total Customers</h2>
-                    <p class="text-3xl">{{ total_customers }}</p>
-                </a>
-                <a href="{{ url_for('overdue_bills') }}" class="bg-red-500 text-white p-6 rounded-lg shadow-lg hover:bg-red-600 transition transform hover:scale-105">
-                    <h2 class="text-xl font-semibold">Overdue Bills</h2>
-                    <p class="text-3xl">{{ overdue_bills }}</p>
-                </a>
-                <div class="bg-green-500 text-white p-6 rounded-lg shadow-lg transition transform hover:scale-105">
-                    <h2 class="text-xl font-semibold">Total Revenue</h2>
-                    <p class="text-3xl">₹{{ total_revenue | round(2) }}</p>
-                </div>
-                <a href="{{ url_for('active_meters') }}" class="bg-yellow-500 text-white p-6 rounded-lg shadow-lg hover:bg-yellow-600 transition transform hover:scale-105">
-                    <h2 class="text-xl font-semibold">Active Meters</h2>
-                    <p class="text-3xl">{{ active_meters }}</p>
-                </a>
+          <!-- KPIs -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <a href="{{ url_for('customers_list') }}" class="stat-card gradient-card hover-lift p-6 rounded-xl">
+              <h2 class="text-sm font-medium text-blue-300 mb-1">Total Customers</h2>
+              <p class="text-3xl font-bold mb-2">{{ total_customers }}</p>
+              <div class="flex items-center text-sm text-slate-400"><span class="mr-2">↗</span><span>View Details</span></div>
+            </a>
+
+            <a href="{{ url_for('overdue_bills') }}" class="stat-card gradient-card hover-lift p-6 rounded-xl">
+              <h2 class="text-sm font-medium text-rose-300 mb-1">Overdue Bills</h2>
+              <p class="text-3xl font-bold mb-2">{{ overdue_bills }}</p>
+              <div class="flex items-center text-sm text-slate-400"><span class="mr-2">⚠</span><span>Needs Attention</span></div>
+            </a>
+
+            <div class="stat-card gradient-card hover-lift p-6 rounded-xl">
+              <h2 class="text-sm font-medium text-emerald-300 mb-1">Total Revenue</h2>
+              <p class="text-3xl font-bold mb-2">₹{{ '{:,.2f}'.format(total_revenue) }}</p>
+              <div class="flex items-center text-sm text-slate-400"><span class="mr-2">💰</span><span>All Time</span></div>
             </div>
 
-            <!-- Chart -->
-            <div class="bg-white p-6 rounded-lg shadow-lg mb-6">
-                <h2 class="text-xl font-semibold mb-4">Daily Revenue</h2>
-                <div class="relative h-80">
-                    <canvas id="revenueChart"></canvas>
-                </div>
+            <a href="{{ url_for('active_meters') }}" class="stat-card gradient-card hover-lift p-6 rounded-xl">
+              <h2 class="text-sm font-medium text-amber-300 mb-1">Active Meters</h2>
+              <p class="text-3xl font-bold mb-2">{{ active_meters }}</p>
+              <div class="flex items-center text-sm text-slate-400"><span class="mr-2">⚡</span><span>Online Now</span></div>
+            </a>
+          </div>
+
+          <!-- Chart -->
+          <div class="gradient-card p-6 rounded-xl mb-8">
+            <div class="flex items-center justify-between mb-6">
+              <h2 class="text-lg font-semibold text-slate-200">Revenue Trends</h2>
+              <div class="flex items-center space-x-2">
+                <span class="px-3 py-1 text-sm text-emerald-400 bg-emerald-400/10 rounded-full"><span class="font-medium">↑ 12%</span> vs last month</span>
+              </div>
             </div>
+            <div class="relative h-80"><canvas id="revenueChart"></canvas></div>
+          </div>
         </div>
 
-        <!-- Operations Sidebar -->
-        <div class="w-full md:w-1/4 bg-indigo-800 p-6 rounded-lg shadow-lg">
-            <h2 class="text-2xl font-bold text-center mb-4">OPERATIONS</h2>
-            <div class="flex flex-col gap-4">
-                <a href="{{ url_for('add_customer') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">Add Customer</a>
-                <a href="{{ url_for('add_meter') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">Add Meter</a>
-                <a href="{{ url_for('add_reading') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">Add Reading</a>
-                <a href="{{ url_for('add_tariff') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">Add Tariff</a>
-                <a href="{{ url_for('bill') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">Generate Bill</a>
-                <a href="{{ url_for('payment') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">Make Payment</a>
-                <a href="{{ url_for('complaint') }}" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition transform hover:scale-105 text-center">File Complaint</a>
+        <!-- Sidebar -->
+        <div class="w-full md:w-80 space-y-6">
+          <div class="gradient-card p-6 rounded-xl">
+            <h2 class="text-lg font-semibold text-slate-200 mb-4">Quick Actions</h2>
+            <div class="space-y-3">
+              <a href="{{ url_for('add_customer') }}" class="flex items-center p-3 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors group"><span class="flex-1 text-blue-300 group-hover:text-blue-200">Add Customer</span><span class="text-blue-400">→</span></a>
+              <a href="{{ url_for('add_meter') }}" class="flex items-center p-3 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg transition-colors group"><span class="flex-1 text-emerald-300 group-hover:text-emerald-200">Add Meter</span><span class="text-emerald-400">→</span></a>
+              <a href="{{ url_for('add_reading') }}" class="flex items-center p-3 bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition-colors group"><span class="flex-1 text-purple-300 group-hover:text-purple-200">Add Reading</span><span class="text-purple-400">→</span></a>
             </div>
-        </div>
-    </div>
+          </div>
 
-    <script>
+          <div class="gradient-card p-6 rounded-xl">
+            <h2 class="text-lg font-semibold text-slate-200 mb-4">Other Operations</h2>
+            <div class="space-y-3">
+              <a href="{{ url_for('add_tariff') }}" class="flex items-center p-3 hover:bg-white/5 rounded-lg transition-colors"><span class="flex-1 text-slate-300">Add Tariff</span><span class="text-slate-400">→</span></a>
+              <a href="{{ url_for('bill') }}" class="flex items-center p-3 hover:bg-white/5 rounded-lg transition-colors"><span class="flex-1 text-slate-300">Generate Bill</span><span class="text-slate-400">→</span></a>
+              <a href="{{ url_for('payment') }}" class="flex items-center p-3 hover:bg-white/5 rounded-lg transition-colors"><span class="flex-1 text-slate-300">Make Payment</span><span class="text-slate-400">→</span></a>
+              <a href="{{ url_for('complaint') }}" class="flex items-center p-3 hover:bg-white/5 rounded-lg transition-colors"><span class="flex-1 text-slate-300">File Complaint</span><span class="text-slate-400">→</span></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endblock %}
+
+    {% block scripts %}
+      <script>
+        // Helpers
+        function calculateMovingAverage(data, window) {
+          const result = [];
+          for (let i = 0; i < data.length; i++) {
+            let sum = 0; let count = 0;
+            for (let j = Math.max(0, i - window + 1); j <= i; j++) { sum += data[j]; count++; }
+            result.push(sum / count);
+          }
+          return result;
+        }
+
+        // Parse data
+        const monthlyData = JSON.parse('{{ monthly_revenue | tojson | safe }}');
+        const labels = Object.keys(monthlyData);
+        const values = Object.values(monthlyData);
+
+        const currencyFormatter = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 });
+
         const ctx = document.getElementById('revenueChart').getContext('2d');
-        const monthlyRevenue = {{ monthly_revenue | safe }};
-        const labels = Object.keys(monthlyRevenue);
-        const data = Object.values(monthlyRevenue);
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, 'rgba(34, 211, 238, 0.25)');
+        gradient.addColorStop(1, 'rgba(34, 211, 238, 0)');
+
         new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Revenue (₹)',
-                    data: data,
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    borderWidth: 1,
-                    fill: true,
-                    tension: 0.4  // Smooth lines
-                }]
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Daily Revenue',
+                data: values,
+                backgroundColor: gradient,
+                borderColor: 'rgb(34, 211, 238)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: 'rgb(34, 211, 238)',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6
+              },
+              {
+                label: '7-Day Average',
+                data: calculateMovingAverage(values, 7),
+                borderColor: 'rgba(248, 113, 113, 0.8)',
+                borderWidth: 2,
+                fill: false,
+                tension: 0.4,
+                pointRadius: 0
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(17, 24, 39, 0.95)',
+                padding: 12,
+                usePointStyle: true,
+                callbacks: { label: (context) => `Revenue: ${currencyFormatter.format(context.parsed.y)}` }
+              }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
+            scales: {
+              x: { grid: { display: false }, ticks: { color: 'rgba(148, 163, 184, 0.8)' } },
+              y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.1)' }, ticks: { color: 'rgba(148, 163, 184, 0.8)', callback: (v) => currencyFormatter.format(v) } }
+            }
+          }
+        });
+      </script>
+    {% endblock %}
+
+                        usePointStyle: true,
+                        callbacks: {
+                            label: (context) => {
+                                return `Revenue: ${currencyFormatter.format(context.parsed.y)}`;
+                            }
+                        }
+                    }
+                },
                 scales: {
-                    y: { beginAtZero: true }
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: 'rgba(148, 163, 184, 0.8)',
+                            font: {
+                                family: 'Inter'
+                            }
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        border: {
+                            display: false
+                        },
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.1)'
+                        },
+                        ticks: {
+                            color: 'rgba(148, 163, 184, 0.8)',
+                            font: {
+                                family: 'Inter'
+                            },
+                            callback: (value) => currencyFormatter.format(value)
+                        }
+                    }
                 }
             }
         });

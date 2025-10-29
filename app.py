@@ -1,36 +1,70 @@
+import os
 from flask import Flask, render_template, request, flash, redirect, url_for
 import mysql.connector
 from mysql.connector import Error
 import json
 import logging
+from functools import wraps
+from dotenv import load_dotenv
+from decimal import Decimal, InvalidOperation
+from datetime import datetime
 
 # Configure logging for debugging
+
+def handle_db_error(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Error as e:
+            logging.error(f"Database error in {f.__name__}: {e}")
+            flash(f"An error occurred: {e}", 'error')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
+            logging.error(f"Unexpected error in {f.__name__}: {e}")
+            flash("An unexpected error occurred", 'error')
+            return redirect(url_for('dashboard'))
+    return decorated_function
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Replace with a secure key
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your_secret_key')
 
 # Database connection configuration
+load_dotenv()
+
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '7410',  # Updated to your MySQL password
-    'database': 'Electricity_Bill_Management'
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''),  # Default to empty string if not set
+    'database': os.getenv('DB_NAME', 'Electricity_Bill_Management')
 }
+
+# Create a connection pool
+try:
+    connection_pool = mysql.connector.pooling.MySQLConnectionPool(
+        pool_name="mypool",
+        pool_size=5,
+        **db_config
+    )
+except Error as e:
+    logging.error(f"Error creating connection pool: {e}")
+    connection_pool = None
 
 def get_db_connection():
     try:
-        connection = mysql.connector.connect(**db_config)
-        if connection.is_connected():
-            return connection
-        else:
-            logging.error("Failed to establish database connection")
-            return None
+        if connection_pool:
+            connection = connection_pool.get_connection()
+            if connection.is_connected():
+                return connection
+        logging.error("Failed to get connection from pool")
+        return None
     except Error as e:
-        logging.error(f"Error connecting to MySQL: {e}")
+        logging.error(f"Error getting connection from pool: {e}")
         return None
 
 @app.route('/')
+@handle_db_error
 def dashboard():
     connection = get_db_connection()
     if connection is None:
@@ -72,7 +106,7 @@ def dashboard():
         connection.close()
 
     return render_template('dashboard.html', total_customers=total_customers, overdue_bills=overdue_bills,
-                           total_revenue=total_revenue, active_meters=active_meters, monthly_revenue=json.dumps(monthly_revenue))
+                           total_revenue=total_revenue, active_meters=active_meters, monthly_revenue=monthly_revenue)
 
 
 @app.route('/add_customer', methods=['GET', 'POST'])
@@ -240,6 +274,7 @@ def bill():
         if connection:
             cursor = connection.cursor()
             try:
+                # Get the last two readings for this meter
                 cursor.execute("""
                     SELECT reading_value, reading_date 
                     FROM Meter_Reading 
@@ -250,14 +285,60 @@ def bill():
                 if len(readings) < 2:
                     flash('Insufficient readings to generate bill', 'error')
                 else:
-                    units_consumed = readings[0][0] - readings[1][0]
+                    # readings[0] is latest reading, readings[1] is previous reading
+                    latest_reading = Decimal(str(readings[0][0]))
+                    previous_reading = Decimal(str(readings[1][0]))
+                    
+                    # Calculate units consumed (latest minus previous)
+                    units_consumed = latest_reading - previous_reading
+                    
+                    # Validate the calculation
+                    if units_consumed < 0:
+                        flash('Error: Latest reading is less than previous reading', 'error')
+                        return redirect(url_for('bill'))
                     cursor.execute("SELECT unit_rate FROM Tariff WHERE tariff_id = %s", (tariff_id,))
                     unit_rate = cursor.fetchone()[0]
-                    amount_due = units_consumed * unit_rate
+                    
+                    # Calculate new bill amount (always positive for new bills)
+                    new_amount = abs(Decimal(str(units_consumed)) * Decimal(str(unit_rate)))
+                    
+                    # Get customer's current credit balance
+                    cursor.execute("""
+                        SELECT c.credit_balance 
+                        FROM Customer c 
+                        JOIN Meter m ON c.customer_id = m.customer_id 
+                        WHERE m.meter_id = %s
+                    """, (meter_id,))
+                    credit_balance = Decimal(str(cursor.fetchone()[0]))
+                    
+                    # Set initial amount_due
+                    amount_due = new_amount
+                    bill_status = 'UNPAID'
+                    
+                    # If customer has credit balance, apply it
+                    if credit_balance > 0:
+                        if credit_balance >= amount_due:
+                            # Enough credit to cover the bill
+                            credit_used = amount_due
+                            amount_due = Decimal('0')
+                            bill_status = 'PAID'
+                        else:
+                            # Partial credit coverage
+                            credit_used = credit_balance
+                            amount_due -= credit_balance
+                            
+                        # Update customer's credit balance
+                        cursor.execute("""
+                            UPDATE Customer c 
+                            JOIN Meter m ON c.customer_id = m.customer_id 
+                            SET c.credit_balance = c.credit_balance - %s 
+                            WHERE m.meter_id = %s
+                        """, (credit_used, meter_id))
+                    
                     cursor.execute("""
                         INSERT INTO Bill (meter_id, tariff_id, billing_date, due_date, amount_due, status)
-                        VALUES (%s, %s, %s, %s, %s, 'UNPAID')
-                    """, (meter_id, tariff_id, billing_date, due_date, amount_due))
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (meter_id, tariff_id, billing_date, due_date, amount_due, bill_status))
                     connection.commit()
                     flash('✅ Bill Generated Successfully!', 'success')
             except Error as e:
@@ -300,23 +381,59 @@ def payment():
                 bill = cursor.fetchone()
                 if not bill:
                     flash('Bill not found', 'error')
-                else:
-                    amount_due, meter_id = bill
-                    cursor.execute("SELECT customer_id FROM Meter WHERE meter_id = %s", (meter_id,))
-                    customer_id = cursor.fetchone()[0]
+                    return redirect(url_for('payment'))
+                
+                amount_due, meter_id = bill
+                # Convert to Decimal for accurate calculations
+                amount_due = Decimal(str(amount_due))
+                amount_paid = Decimal(str(amount_paid))
+                
+                cursor.execute("SELECT customer_id, credit_balance FROM Meter JOIN Customer USING (customer_id) WHERE meter_id = %s", (meter_id,))
+                customer_id, credit_balance = cursor.fetchone()
+                credit_balance = Decimal(str(credit_balance))
+                
+                # Record the payment first
+                cursor.execute("""
+                    INSERT INTO Payment (bill_id, payment_date, amount_paid, payment_method)
+                    VALUES (%s, %s, %s, %s)
+                """, (bill_id, payment_date, amount_paid, payment_method))
+                
+                total_paid = amount_paid
+                
+                # If there's credit balance and bill is not fully paid by the payment
+                if credit_balance > 0 and amount_paid < amount_due:
+                    credit_to_use = min(credit_balance, amount_due - amount_paid)
+                    # Use credit balance
                     cursor.execute("""
-                        INSERT INTO Payment (bill_id, payment_date, amount_paid, payment_method)
-                        VALUES (%s, %s, %s, %s)
-                    """, (bill_id, payment_date, amount_paid, payment_method))
-                    if amount_paid >= amount_due:
-                        cursor.execute("UPDATE Bill SET status = 'PAID' WHERE bill_id = %s", (bill_id,))
-                    excess = amount_paid - amount_due if amount_paid > amount_due else 0
-                    if excess > 0:
-                        cursor.execute("""
-                            UPDATE Customer SET credit_balance = credit_balance + %s WHERE customer_id = %s
-                        """, (excess, customer_id))
-                    connection.commit()
-                    flash('✅ Payment Recorded Successfully!', 'success')
+                        UPDATE Customer 
+                        SET credit_balance = credit_balance - %s 
+                        WHERE customer_id = %s
+                    """, (credit_to_use, customer_id))
+                    total_paid += credit_to_use
+                
+                # Calculate remaining amount after payment and credit usage
+                remaining = amount_due - total_paid
+                
+                # Update bill and handle payment status
+                cursor.execute(
+                    "UPDATE Bill SET status = %s, amount_due = %s WHERE bill_id = %s",
+                    ('PAID' if remaining <= 0 else 'UNPAID', remaining, bill_id)
+                )
+                
+                # Handle overpayment if any
+                if remaining < 0:
+                    cursor.execute("""
+                        UPDATE Customer 
+                        SET credit_balance = credit_balance + %s 
+                        WHERE customer_id = %s
+                    """, (abs(remaining), customer_id))
+                    flash('✅ Payment processed and excess added to credit balance!', 'success')
+                elif remaining == 0:
+                    flash('✅ Payment processed successfully!', 'success')
+                else:
+                    flash('✅ Partial payment processed successfully!', 'success')
+                
+                connection.commit()
             except Error as e:
                 logging.error(f"Error recording payment: {e}")
                 flash(f"Error recording payment: {e}", 'error')
@@ -489,4 +606,10 @@ def overdue_bills():
     return render_template('overdue_bills.html', overdue_customers=overdue_customers)
 
 if __name__ == '__main__':
+    from datetime import datetime
+    
+    @app.context_processor
+    def inject_now():
+        return {'now': datetime.now()}
+        
     app.run(debug=True)
